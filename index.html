@@ -7,9 +7,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%230f1210'/><circle cx='256' cy='256' r='150' fill='none' stroke='%23c9a648' stroke-width='28'/><text x='256' y='300' text-anchor='middle' font-family='Georgia,serif' font-size='150' fill='%23e9e4d6'>CI</text></svg>">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'><rect width='512' height='512' rx='96' fill='%230f1210'/><circle cx='256' cy='256' r='150' fill='none' stroke='%23c9a648' stroke-width='28'/><text x='256' y='300' text-anchor='middle' font-family='Georgia,serif' font-size='150' fill='%23e9e4d6'>CI</text></svg>">
-<link rel="manifest" href="data:application/manifest+json,{"name":"Commander%20Card%20Index","short_name":"Card%20Index","start_url":".","display":"standalone","background_color":"#0f1210","theme_color":"#0f1210","icons":%5B{"src":"data:image/svg%2Bxml,%3Csvg%20xmlns%3D'http://www.w3.org/2000/svg'%20viewBox%3D'0%200%20512%20512'%3E%3Crect%20width%3D'512'%20height%3D'512'%20rx%3D'96'%20fill%3D'%230f1210'/%3E%3Ccircle%20cx%3D'256'%20cy%3D'256'%20r%3D'150'%20fill%3D'none'%20stroke%3D'%23c9a648'%20stroke-width%3D'28'/%3E%3Ctext%20x%3D'256'%20y%3D'300'%20text-anchor%3D'middle'%20font-family%3D'Georgia,serif'%20font-size%3D'150'%20fill%3D'%23e9e4d6'%3ECI%3C/text%3E%3C/svg%3E","sizes":"any","type":"image/svg%2Bxml","purpose":"any"}%5D}">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
 <title>Commander Card Index</title>
 <style>
   :root{
@@ -2314,5 +2314,10 @@ function renderCompareTable(){
 </script>
 
 
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+}
+</script>
 </body>
 </html>
