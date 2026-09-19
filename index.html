@@ -300,6 +300,9 @@
   .nl-ask-btns{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
   .nl-kind{ font-size:10px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.05em; margin-left:4px; }
   @media (max-width:560px){ .nl-row{ flex-wrap:wrap; } .nl-row input{ flex-basis:100%; } .nl-btn{ flex:1; } }
+  .deck-search-row{ display:flex; align-items:center; gap:10px; margin:0 0 10px; }
+  .deck-search-row input{ flex:1; min-height:44px; font-size:14px; }
+  .deck-search-count{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
   .flabel-actions{ align-items:center; gap:12px; flex-wrap:wrap; }
   .flabel-btns{ margin-left:auto; display:flex; gap:8px; }
   .flabel-btns .expand-toggle{ margin-left:0; }
@@ -1089,6 +1092,7 @@
             </div>
             <div class="section">
               <div class="flabel flabel-actions">Cards in Deck (<span id="deck-card-count">0</span>)<span class="flabel-btns"><button class="expand-toggle" data-expand-all="deck-cardlist">Expand all</button><button class="expand-toggle" id="deck-list-toggle" aria-expanded="true">Hide list</button></span></div>
+              <div class="deck-search-row"><input type="text" id="deck-search" placeholder="Search this deck — name, type, mechanic, keyword, tag or rules text" autocomplete="off"><span class="deck-search-count" id="deck-search-count"></span></div>
               <div id="deck-cardlist" class="deck-cardlist"></div>
             </div>
           </div>
@@ -2557,6 +2561,11 @@ function renderCurrentDeck(){
   }).join('')
     : '<div class="empty-note">No cards yet — search above or upload a decklist.</div>';
   wireExpandableRows(el('deck-cardlist'));
+  el('deck-cardlist').querySelectorAll('.dc-wrap').forEach(wrap=>{
+    const c = NAME_INDEX.get((wrap.dataset.name||'').toLowerCase()); if(!c) return;
+    wrap.dataset.search = [c.n, c.tl, (c.cat||[]).join(' '), (c.kw||[]).join(' '), deck.tags[c.n]||'', c.ot||''].join(' | ').toLowerCase();
+  });
+  applyDeckSearch();
   document.querySelectorAll('#deck-cardlist [data-tag-for]').forEach(inp=>{
     attachSuggest(inp, ()=>window.__tagOptions||[], {append:true});
     inp.addEventListener('click', e=>e.stopPropagation());
@@ -2761,6 +2770,18 @@ el('new-deck-create').addEventListener('click', ()=>{
 });
 
 el('delete-deck-btn').addEventListener('click', ()=> deleteDeck(currentDeckId));
+function applyDeckSearch(){
+  const q = (el('deck-search').value||'').trim().toLowerCase();
+  const terms = q.split(/\s+/).filter(Boolean);
+  let shown = 0, total = 0;
+  el('deck-cardlist').querySelectorAll('.dc-wrap').forEach(wrap=>{
+    total++; const hay = wrap.dataset.search||'';
+    const ok = !terms.length || terms.every(t=>hay.includes(t));
+    wrap.style.display = ok ? '' : 'none'; if(ok) shown++;
+  });
+  el('deck-search-count').textContent = terms.length ? `${shown} of ${total}` : '';
+}
+el('deck-search').addEventListener('input', applyDeckSearch);
 el('deck-list-toggle').addEventListener('click', ()=>{
   const open = el('deck-cardlist').style.display==='none';
   el('deck-cardlist').style.display = open?'':'none';
