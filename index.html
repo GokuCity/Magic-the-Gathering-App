@@ -916,6 +916,9 @@
         <div class="cmc-row" id="cmc-exact-input" style="display:none;">
           <input type="number" id="f-cmc-exact" placeholder="exact mana value" min="0">
         </div>
+        <div class="prob-row" style="margin:10px 0 0"><label style="min-width:auto">{X} in cost</label>
+          <select id="f-xcost" data-no-upgrade><option value="all">Any</option><option value="only">Only cards with {X}</option><option value="exclude">No {X} cards</option></select>
+        </div>
       </div>
 
       <div class="section">
@@ -1327,6 +1330,7 @@ let state = {
   phraseMode: 'any',
   etb: false,
   cmcMode: 'range',
+  xcost: 'all',
   cmcMin: null,
   cmcMax: null,
   cmcExact: null,
@@ -1554,6 +1558,7 @@ function matches(card){
   if(state.type && !card.tl.toLowerCase().includes(state.type)) return false;
   if(state.etb && !card._etb) return false;
 
+  if(state.xcost!=='all'){ const hasX = /\{X\}/i.test(card.mc||''); if(state.xcost==='only' && !hasX) return false; if(state.xcost==='exclude' && hasX) return false; }
   if(state.cmcMode==='range'){
     if(state.cmcMin!==null && card.cmc < state.cmcMin) return false;
     if(state.cmcMax!==null && card.cmc > state.cmcMax) return false;
@@ -1739,6 +1744,7 @@ function togglePhrase(ph){ if(state.phrases.has(ph)) state.phrases.delete(ph); e
 document.querySelectorAll('#phrase-list .kw-check').forEach(row=>row.addEventListener('click', e=>{ e.preventDefault(); togglePhrase(row.dataset.ph); }));
 el('phrase-expand-btn').addEventListener('click', ()=>{ const showing = el('phrase-list').classList.toggle('show'); el('phrase-expand-btn').textContent = showing ? 'Hide phrase suggestions' : 'Browse phrase suggestions'; });
 document.querySelectorAll('input[name=phrasemode]').forEach(r=>r.addEventListener('change', e=>{ state.phraseMode = e.target.value; document.querySelectorAll('#mode-phrase .radiopt').forEach(l=>l.classList.remove('active')); e.target.closest('.radiopt').classList.add('active'); recompute(); }));
+el('f-xcost').addEventListener('change', e=>{ state.xcost = e.target.value; updateMobileFilterCount(); recompute(); });
 el('f-etb').addEventListener('change', e=>{ state.etb = e.target.checked; updateMobileFilterCount(); recompute(); });
 el('f-cmc-min').addEventListener('input', e=>{ state.cmcMin = e.target.value==='' ? null : Number(e.target.value); updateMobileFilterCount(); recompute(); });
 el('f-cmc-max').addEventListener('input', e=>{ state.cmcMax = e.target.value==='' ? null : Number(e.target.value); updateMobileFilterCount(); recompute(); });
@@ -1837,6 +1843,7 @@ function updateMobileFilterCount(){
   if(state.type) n++;
   if(state.etb) n++;
   if(state.cmcMode==='range' && (state.cmcMin!==null || state.cmcMax!==null)) n++;
+  if(state.xcost!=='all') n++;
   if(state.cmcMode==='exact' && state.cmcExact!==null) n++;
   if(state.cmcMode==='odd' || state.cmcMode==='even') n++;
   n += state.colors.size>0 ? 1 : 0;
@@ -1934,7 +1941,7 @@ document.querySelectorAll('.reset').forEach(r=>{
     if(what==='text'){ state.text=''; el('f-text').value=''; state.etb=false; el('f-etb').checked=false; }
     if(what==='type'){ state.type=''; el('f-type').value=''; }
     if(what==='cmc'){
-      state.cmcMode='range'; state.cmcMin=null; state.cmcMax=null; state.cmcExact=null;
+      state.cmcMode='range'; state.cmcMin=null; state.cmcMax=null; state.cmcExact=null; state.xcost='all'; el('f-xcost').value='all';
       el('f-cmc-min').value=''; el('f-cmc-max').value=''; el('f-cmc-exact').value='';
       document.querySelectorAll('#mode-cmc .radiopt').forEach(l=>l.classList.remove('active'));
       document.querySelector('#mode-cmc .radiopt').classList.add('active');
@@ -3711,7 +3718,7 @@ const NL = (function(){
 
   function parse(q){
     ensureDicts();
-    const out = {type:null, subtypes:[], mechanics:[], keywords:[], identity:null, identityMode:'subset', cmc:null, gc:null, cbc:null, legendary:null, rarity:null, text:[], unknown:[], reads:[]};
+    const out = {type:null, subtypes:[], mechanics:[], keywords:[], identity:null, identityMode:'subset', cmc:null, gc:null, cbc:null, legendary:null, xcost:null, rarity:null, text:[], unknown:[], reads:[]};
     let s = ' '+q.toLowerCase().replace(/[“”"']/g,'"').replace(/[,;]/g,' ')+' ';
 
     // Scryfall-style tokens
@@ -3761,6 +3768,8 @@ const NL = (function(){
     s = s.replace(/\b(commanders|commander|can be (my|a|your) commander|legal commanders?)\b/g, ()=>{ out.cbc='only'; return ' '; });
     s = s.replace(/\b(game[- ]?changers?|gc)\b/g, ()=>{ out.gc='only'; return ' '; });
     s = s.replace(/\bno game[- ]?changers?\b|\bnon[- ]?gc\b/g, ()=>{ out.gc='exclude'; return ' '; });
+    s = s.replace(/\b(no|non|without) x\b|\bnon[- ]?x (cost|spells?|cards?)\b/g, ()=>{ out.xcost='exclude'; return ' '; });
+    s = s.replace(/\b(x spells?|x cards?|x cost(s|ed)?|with (an )?x in (the |its |their )?(cost|mana cost)|\{x\}|x in (the |its |their )?(cost|mana cost))\b/g, ()=>{ out.xcost='only'; return ' '; });
     s = s.replace(/\bnon[- ]?legendary\b/g, ()=>{ out.legendary='exclude'; return ' '; });
     s = s.replace(/\blegendary\b/g, ()=>{ out.legendary='only'; return ' '; });
 
@@ -3823,6 +3832,7 @@ const NL = (function(){
     if(r.cbc){ state.cbc=r.cbc; el('f-cbc').value=r.cbc; reads.push(['Commander', r.cbc==='only'?'can be commander':'not a commander']); }
     if(r.gc){ state.gc=r.gc; el('f-gc').value=r.gc; reads.push(['Game changer', r.gc]); }
     if(r.legendary){ state.legendary=r.legendary; el('f-legendary').value=r.legendary; reads.push(['Legendary', r.legendary]); }
+    if(r.xcost){ state.xcost=r.xcost; el('f-xcost').value=r.xcost; reads.push(['{X} in cost', r.xcost==='only'?'only X cards':'no X cards']); }
     r.text.forEach(t=>{ state.phrases.add(t.toLowerCase()); reads.push(['Rules text', `"${t}"`]); });
     if(r.text.length && typeof renderPhraseUI==='function') renderPhraseUI();
     if(r.rarity){ state.phrases.size; reads.push(['Rarity', r.rarity + ' (shown in results; no rarity filter exists yet)']); }

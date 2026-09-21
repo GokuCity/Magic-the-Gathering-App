@@ -1,7 +1,7 @@
 // Service worker: caches the app shell so it opens instantly and works offline.
 // Strategy: serve from cache, then refresh the cache in the background (stale-while-revalidate).
 // Bump CACHE whenever index.html changes so old copies are dropped on the next activation.
-const CACHE = 'card-index-v2';
+const CACHE = 'card-index-v3';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
