@@ -303,6 +303,22 @@
   .deck-search-row{ display:flex; align-items:center; gap:10px; margin:0 0 10px; }
   .deck-search-row input{ flex:1; min-height:44px; font-size:14px; }
   .deck-search-count{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
+  .results-tools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0 12px; border-bottom:1px solid var(--line); margin-bottom:12px; }
+  .results-tools-gap{ flex:1; }
+  .results-tools .btn-outline{ min-height:40px; }
+  .results-tools .btn-outline:disabled{ opacity:.45; cursor:default; }
+  .hist-panel{ border:1px solid var(--gold-dim); border-radius:4px; background:var(--panel-2); padding:12px; margin-bottom:14px; }
+  .hist-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .hist-tabs{ display:flex; gap:6px; flex-wrap:wrap; flex:1; }
+  .hist-tabs .btn-outline.active{ background:var(--gold-dim); color:var(--bg); border-color:var(--gold-dim); }
+  .hist-row{ display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--line); padding:4px 0; }
+  .hist-star{ background:none; border:none; color:var(--ink-dim); font-size:20px; min-width:40px; min-height:44px; cursor:pointer; }
+  .hist-star.on{ color:#e8c547; }
+  .hist-main{ flex:1; min-width:0; background:none; border:none; color:var(--ink); text-align:left; padding:8px 4px; min-height:48px; cursor:pointer; display:flex; flex-direction:column; gap:2px; }
+  .hist-main:hover .hist-label{ color:var(--gold); }
+  .hist-label{ font-size:14px; line-height:1.4; word-break:break-word; }
+  .hist-meta{ font-size:11.5px; color:var(--ink-dim); }
+  .card-row.flash{ box-shadow:0 0 0 2px var(--gold); transition:box-shadow .3s; }
   .flabel-actions{ align-items:center; gap:12px; flex-wrap:wrap; }
   .flabel-btns{ margin-left:auto; display:flex; gap:8px; }
   .flabel-btns .expand-toggle{ margin-left:0; }
@@ -1017,6 +1033,16 @@
         <div class="target-deck">Add to: <select id="target-deck"><option>Loading decks…</option></select></div>
         <button class="expand-toggle" id="expand-toggle-btn">Expand all</button>
       </div>
+      <div class="results-tools">
+        <button class="btn-outline small" id="hist-btn" aria-expanded="false">🕘 History &amp; favorites</button>
+        <span class="results-tools-gap"></span>
+        <button class="btn-outline small" id="jump-last-saved" title="Scroll to the last card in these results that is saved to a list">↓ Last saved</button>
+        <button class="btn-outline small" id="jump-top" title="Back to the top">↑ Top</button>
+      </div>
+      <div id="hist-panel" class="hist-panel" style="display:none;">
+        <div class="hist-head"><div id="hist-tabs" class="hist-tabs"></div><button class="modal-close" id="hist-close" aria-label="Close">&times;</button></div>
+        <div id="hist-list"></div>
+      </div>
       <div class="cardlist" id="cardlist"></div>
       <div id="loadmore" class="loadmore" style="display:none;">Show 100 more</div>
       <div id="empty-state" class="empty" style="display:none;">No cards match these filters. Try widening your search.</div>
@@ -1633,12 +1659,14 @@ function sortCards(arr){
 let filteredCache = [];
 
 function recompute(){
+  if(typeof recordSearch==='function') recordSearch(false);
   filteredCache = sortCards(CARD_DATA.filter(matches));
   visibleCount = PAGE_SIZE;
   render();
 }
 
 function render(){
+  if(typeof updateJumpButtons==='function') setTimeout(updateJumpButtons,0);
   const list = el('cardlist');
   const total = filteredCache.length;
   el('count-num').textContent = total.toLocaleString();
@@ -3851,6 +3879,7 @@ const NL = (function(){
     const reads = NL.apply(r);
     chips.innerHTML = reads.length ? `<span class="nl-lbl">Understood:</span>` + reads.map(([k,v])=>`<span class="tchip"><b>${escapeHtml(k)}</b>&nbsp;${escapeHtml(v)}</span>`).join('') : '<span class="nl-lbl">Nothing recognised — try words like creature, ramp, Bant, "mana value 3 or less".</span>';
     pendingUnknown = r.unknown.slice(); renderUnknown();
+    nlBaseKey = snapshotKey(filterSnapshot()); recordSearch(true);
   }
   function renderUnknown(){
     if(!pendingUnknown.length){ unknownBox.style.display='none'; unknownBox.innerHTML=''; return; }
@@ -3871,6 +3900,134 @@ const NL = (function(){
   el('nl-clear').addEventListener('click', ()=>{ input.value=''; chips.innerHTML=''; pendingUnknown=[]; renderUnknown(); clearAllFilters(); });
   window.__nlRun = run;
 })();
+
+/* ============================================================
+   SEARCH HISTORY & FAVORITES + jump buttons (search tab toolbar)
+   ============================================================ */
+const HIST_KEY = 'cci-search-history-v1', FAV_KEY = 'cci-search-favorites-v1';
+var searchHistory = [], searchFavs = [];
+try{ searchHistory = JSON.parse(localStorage.getItem(HIST_KEY)||'[]'); }catch(e){}
+try{ searchFavs = JSON.parse(localStorage.getItem(FAV_KEY)||'[]'); }catch(e){}
+function persistHist(){ try{ localStorage.setItem(HIST_KEY, JSON.stringify(searchHistory.slice(0,50))); localStorage.setItem(FAV_KEY, JSON.stringify(searchFavs)); }catch(e){} }
+
+// Snapshot of every filter + sort + the natural-language query
+function filterSnapshot(){
+  return {
+    name:state.name, type:state.type, text:state.text, phrases:[...state.phrases], phraseMode:state.phraseMode, etb:state.etb,
+    cmcMode:state.cmcMode, cmcMin:state.cmcMin, cmcMax:state.cmcMax, cmcExact:state.cmcExact, xcost:state.xcost,
+    colors:[...state.colors], colorMode:state.colorMode, identity:[...state.identity], identityMode:state.identityMode,
+    keywords:[...state.keywords], categories:[...state.categories], categoryMode:state.categoryMode,
+    gc:state.gc, cbc:state.cbc, legendary:state.legendary, sort:state.sort, nl:(el('nl-input').value||'').trim(),
+  };
+}
+var nlBaseKey = null;
+function snapshotLabel(sn){
+  if(sn.nl){ const k = snapshotKey(sn); return (nlBaseKey && k!==nlBaseKey) ? `${sn.nl} → ${filterSummary(sn)}` : sn.nl; }
+  return filterSummary(sn);
+}
+function filterSummary(sn){
+  const parts = [];
+  if(sn.type) parts.push(sn.type);
+  if(sn.name) parts.push(`name "${sn.name}"`);
+  if(sn.categories&&sn.categories.length) parts.push(sn.categories.join(sn.categoryMode==='all'?' + ':' / '));
+  if(sn.keywords&&sn.keywords.length) parts.push(sn.keywords.join(', '));
+  if(sn.identity&&sn.identity.length) parts.push(`id ${sn.identity.join('')}${sn.identityMode==='exact'?' exact':''}`);
+  if(sn.colors&&sn.colors.length) parts.push(`colors ${sn.colors.join('')}`);
+  if(sn.cmcMode==='exact' && sn.cmcExact!=null) parts.push(`MV ${sn.cmcExact}`);
+  else if(sn.cmcMode==='range' && (sn.cmcMin!=null||sn.cmcMax!=null)) parts.push(`MV ${sn.cmcMin!=null?sn.cmcMin:'0'}–${sn.cmcMax!=null?sn.cmcMax:'∞'}`);
+  else if(sn.cmcMode==='odd'||sn.cmcMode==='even') parts.push(`${sn.cmcMode} MV`);
+  if(sn.xcost&&sn.xcost!=='all') parts.push(sn.xcost==='only'?'X cost':'no X');
+  if(sn.text) parts.push(`text "${sn.text}"`);
+  if(sn.phrases&&sn.phrases.length) parts.push(sn.phrases.map(p=>`"${p}"`).join(sn.phraseMode==='all'?' + ':' / '));
+  if(sn.etb) parts.push('ETB only');
+  if(sn.gc&&sn.gc!=='all') parts.push(sn.gc==='only'?'game changers':'no GC');
+  if(sn.cbc&&sn.cbc!=='all') parts.push(sn.cbc==='only'?'commanders':'non-commanders');
+  if(sn.legendary&&sn.legendary!=='all') parts.push(sn.legendary==='only'?'legendary':'non-legendary');
+  return parts.join(' · ') || 'All cards';
+}
+function snapshotKey(sn){ const c = Object.assign({}, sn); delete c.nl; return JSON.stringify(c); }
+function isDefaultSnapshot(sn){ return !sn.nl && snapshotLabel(sn)==='All cards'; }
+
+// Restore every filter from a snapshot and sync the whole panel
+function applySnapshot(sn){
+  clearAllFilters();
+  state.name = sn.name||''; el('f-name').value = sn.name||'';
+  state.type = sn.type||''; el('f-type').value = sn.type ? (sn.type[0].toUpperCase()+sn.type.slice(1)) : '';
+  state.text = sn.text||''; el('f-text').value = sn.text||'';
+  state.phrases = new Set(sn.phrases||[]); state.phraseMode = sn.phraseMode||'any';
+  document.querySelectorAll('input[name=phrasemode]').forEach(x=>{ x.checked = x.value===state.phraseMode; x.closest('.radiopt').classList.toggle('active', x.value===state.phraseMode); });
+  if(typeof renderPhraseUI==='function') renderPhraseUI();
+  state.etb = !!sn.etb; el('f-etb').checked = state.etb;
+  state.cmcMode = sn.cmcMode||'range'; state.cmcMin = sn.cmcMin??null; state.cmcMax = sn.cmcMax??null; state.cmcExact = sn.cmcExact??null;
+  document.querySelectorAll('input[name=cmcmode]').forEach(x=>{ x.checked = x.value===state.cmcMode; x.closest('.radiopt').classList.toggle('active', x.value===state.cmcMode); });
+  el('cmc-range-inputs').style.display = state.cmcMode==='range'?'flex':'none'; el('cmc-exact-input').style.display = state.cmcMode==='exact'?'flex':'none';
+  el('f-cmc-min').value = state.cmcMin??''; el('f-cmc-max').value = state.cmcMax??''; el('f-cmc-exact').value = state.cmcExact??'';
+  state.xcost = sn.xcost||'all'; el('f-xcost').value = state.xcost;
+  state.colors = new Set(sn.colors||[]); state.colorMode = sn.colorMode||'subset';
+  document.querySelectorAll('#pips-colors .pip').forEach(p=>p.classList.toggle('on', state.colors.has(p.dataset.c)));
+  document.querySelectorAll('input[name=colmode]').forEach(x=>{ x.checked = x.value===state.colorMode; x.closest('.radiopt').classList.toggle('active', x.value===state.colorMode); });
+  state.identity = new Set(sn.identity||[]); state.identityMode = sn.identityMode||'subset';
+  document.querySelectorAll('#pips-identity .pip').forEach(p=>p.classList.toggle('on', state.identity.has(p.dataset.c)));
+  document.querySelectorAll('input[name=idmode]').forEach(x=>{ x.checked = x.value===state.identityMode; x.closest('.radiopt').classList.toggle('active', x.value===state.identityMode); });
+  state.keywords = new Set(sn.keywords||[]); renderChips(); syncFullListChecks();
+  state.categories = new Set(sn.categories||[]); state.categoryMode = sn.categoryMode||'any';
+  document.querySelectorAll('#cat-list .kw-check').forEach(row=>{ const on = state.categories.has(row.dataset.k); row.classList.toggle('checked', on); row.querySelector('input').checked = on; });
+  document.querySelectorAll('input[name=catmode]').forEach(x=>{ x.checked = x.value===state.categoryMode; x.closest('.radiopt').classList.toggle('active', x.value===state.categoryMode); });
+  if(typeof renderCatChips==='function') renderCatChips();
+  state.gc = sn.gc||'all'; el('f-gc').value = state.gc; state.cbc = sn.cbc||'all'; el('f-cbc').value = state.cbc; state.legendary = sn.legendary||'all'; el('f-legendary').value = state.legendary;
+  if(sn.sort){ state.sort = sn.sort; el('f-sort').value = sn.sort; }
+  el('nl-input').value = sn.nl||''; el('nl-reads').innerHTML = sn.nl ? `<span class="nl-lbl">Restored search:</span><span class="tchip">${escapeHtml(sn.nl)}</span>` : '';
+  updateMobileFilterCount(); recompute();
+}
+
+// Record a search (debounced from recompute; immediate from the NL search)
+var histTimer = null, histSuppress = false;
+function recordSearch(immediate){
+  if(histSuppress) return;
+  clearTimeout(histTimer);
+  const doIt = ()=>{
+    const sn = filterSnapshot(); if(isDefaultSnapshot(sn)) return;
+    const key = snapshotKey(sn) + '|' + sn.nl;
+    searchHistory = searchHistory.filter(h=>h.key!==key);
+    searchHistory.unshift({key, sn, label:snapshotLabel(sn), ts:Date.now(), count:filteredCache.length});
+    searchHistory = searchHistory.slice(0,50); persistHist();
+    if(el('hist-panel').style.display!=='none') renderHistPanel();
+  };
+  if(immediate) doIt(); else histTimer = setTimeout(doIt, 1500);
+}
+function toggleFav(h){
+  const i = searchFavs.findIndex(f=>f.key===h.key);
+  if(i>=0) searchFavs.splice(i,1); else searchFavs.unshift(Object.assign({}, h, {ts:Date.now()}));
+  persistHist(); renderHistPanel();
+}
+var histTab = 'history';
+function renderHistPanel(){
+  const list = histTab==='history' ? searchHistory : searchFavs;
+  const rel = ts => { const m = Math.round((Date.now()-ts)/60000); return m<1?'just now':m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} h ago`:`${Math.round(m/1440)} d ago`; };
+  el('hist-tabs').innerHTML = `<button class="btn-outline small ${histTab==='history'?'active':''}" data-hist-tab="history">History (${searchHistory.length})</button><button class="btn-outline small ${histTab==='favs'?'active':''}" data-hist-tab="favs">★ Favorites (${searchFavs.length})</button>${histTab==='history'&&searchHistory.length?'<button class="btn-outline small danger" id="hist-clear">Clear history</button>':''}`;
+  el('hist-list').innerHTML = list.length ? list.map((h,i)=>{ const fav = searchFavs.some(f=>f.key===h.key);
+    return `<div class="hist-row"><button class="hist-star ${fav?'on':''}" data-hist-fav="${i}" title="${fav?'Remove from favorites':'Add to favorites'}">${fav?'★':'☆'}</button><button class="hist-main" data-hist-apply="${i}"><span class="hist-label">${escapeHtml(h.label)}</span><span class="hist-meta">${h.count!=null?h.count.toLocaleString()+' cards · ':''}${rel(h.ts)}</span></button><button class="deck-card-remove" data-hist-del="${i}" title="Remove">&times;</button></div>`; }).join('')
+    : `<div class="empty-note" style="padding:12px 0">${histTab==='history'?'No searches yet — anything you filter or search for shows up here (last 50).':'No favorites yet — tap ☆ next to a search to keep it.'}</div>`;
+  el('hist-tabs').querySelectorAll('[data-hist-tab]').forEach(b=>b.addEventListener('click', ()=>{ histTab=b.dataset.histTab; renderHistPanel(); }));
+  const hc = el('hist-clear'); if(hc) hc.addEventListener('click', ()=>{ if(confirm('Clear search history? Favorites are kept.')){ searchHistory=[]; persistHist(); renderHistPanel(); } });
+  el('hist-list').querySelectorAll('[data-hist-apply]').forEach(b=>b.addEventListener('click', ()=>{ const h = list[Number(b.dataset.histApply)]; histSuppress = true; applySnapshot(h.sn); histSuppress = false; recordSearch(true); el('hist-panel').style.display='none'; el('hist-btn').setAttribute('aria-expanded','false'); }));
+  el('hist-list').querySelectorAll('[data-hist-fav]').forEach(b=>b.addEventListener('click', ()=>toggleFav(list[Number(b.dataset.histFav)])));
+  el('hist-list').querySelectorAll('[data-hist-del]').forEach(b=>b.addEventListener('click', ()=>{ const h = list[Number(b.dataset.histDel)]; if(histTab==='history') searchHistory = searchHistory.filter(x=>x!==h); else searchFavs = searchFavs.filter(x=>x!==h); persistHist(); renderHistPanel(); }));
+}
+el('hist-btn').addEventListener('click', ()=>{ const open = el('hist-panel').style.display==='none'; el('hist-panel').style.display = open?'block':'none'; el('hist-btn').setAttribute('aria-expanded', open); if(open) renderHistPanel(); });
+el('hist-close').addEventListener('click', ()=>{ el('hist-panel').style.display='none'; el('hist-btn').setAttribute('aria-expanded','false'); });
+
+// Jump buttons: last card saved to a list (in current sort/filter order), and back to top
+function lastSavedIndex(){ for(let i=filteredCache.length-1;i>=0;i--){ if(listsContaining(filteredCache[i].n).length) return i; } return -1; }
+el('jump-last-saved').addEventListener('click', ()=>{
+  const idx = lastSavedIndex();
+  if(idx<0){ toast('No card in these results is saved to a list'); return; }
+  if(idx >= visibleCount){ visibleCount = Math.ceil((idx+1)/PAGE_SIZE)*PAGE_SIZE; render(); }
+  const row = el('cardlist').querySelector(`.card-row[data-idx="${idx}"]`);
+  if(row){ row.scrollIntoView({behavior:'smooth', block:'center'}); row.classList.add('flash'); setTimeout(()=>row.classList.remove('flash'), 1600); }
+});
+el('jump-top').addEventListener('click', ()=>{ window.scrollTo({top: el('nl-input').getBoundingClientRect().top + window.scrollY - 80, behavior:'smooth'}); });
+function updateJumpButtons(){ const idx = lastSavedIndex(); el('jump-last-saved').textContent = idx<0 ? '↓ Last saved' : `↓ Last saved (#${idx+1})`; el('jump-last-saved').disabled = idx<0; }
 
 // Home-screen install: register the service worker when served over https (no-op when opened as a local file).
 if('serviceWorker' in navigator && location.protocol==='https:'){
