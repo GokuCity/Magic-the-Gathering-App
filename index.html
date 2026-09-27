@@ -305,6 +305,11 @@
   .deck-search-count{ font-size:12px; color:var(--ink-dim); white-space:nowrap; }
   .results-tools{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 0 12px; border-bottom:1px solid var(--line); margin-bottom:12px; }
   .results-tools-gap{ flex:1; }
+  .name-search{ margin:0 0 12px; }
+  .name-search .kw-search-wrap{ position:relative; }
+  .name-search input{ width:100%; min-height:46px; font-size:15px; padding-right:44px; }
+  .name-clear{ position:absolute; right:4px; top:4px; width:38px; height:38px; background:none; border:none; color:var(--ink-dim); font-size:22px; cursor:pointer; margin:0; padding:0; letter-spacing:0; text-transform:none; font-family:inherit; }
+  .name-clear:hover{ color:var(--gold); }
   .results-tools .btn-outline{ min-height:40px; }
   .results-tools .btn-outline:disabled{ opacity:.45; cursor:default; }
   .hist-panel{ border:1px solid var(--gold-dim); border-radius:4px; background:var(--panel-2); padding:12px; margin-bottom:14px; }
@@ -894,11 +899,6 @@
       </div>
 
       <div class="section">
-        <div class="flabel">Name<span class="reset" data-reset="name">clear</span></div>
-        <div class="kw-search-wrap"><input type="text" id="f-name" placeholder="e.g. Atraxa" autocomplete="off"><div class="kw-results" id="f-name-results"></div></div>
-      </div>
-
-      <div class="section">
         <div class="flabel">Card Type<span class="reset" data-reset="type">clear</span></div>
         <input type="text" id="f-type" placeholder="e.g. Creature, Elf, Artifact" autocomplete="off">
       </div>
@@ -1038,6 +1038,9 @@
         <span class="results-tools-gap"></span>
         <button class="btn-outline small" id="jump-last-saved" title="Scroll to the last card in these results that is saved to a list">↓ Last saved</button>
         <button class="btn-outline small" id="jump-top" title="Back to the top">↑ Top</button>
+      </div>
+      <div class="name-search">
+        <div class="kw-search-wrap"><input type="text" id="f-name" placeholder="Search by card name…" autocomplete="off"><button class="reset name-clear" data-reset="name" aria-label="Clear name search">&times;</button><div class="kw-results" id="f-name-results"></div></div>
       </div>
       <div id="hist-panel" class="hist-panel" style="display:none;">
         <div class="hist-head"><div id="hist-tabs" class="hist-tabs"></div><button class="modal-close" id="hist-close" aria-label="Close">&times;</button></div>
