@@ -895,7 +895,7 @@
 
       <div class="section">
         <button class="clear-all" id="clear-all-btn">Clear all filters</button>
-        <div class="default-note">Opens showing green/white creatures with an enters-the-battlefield trigger, sorted by mana value.</div>
+        <div class="default-note">Opens showing every card with no filters applied.</div>
       </div>
 
       <div class="section">
@@ -2334,22 +2334,18 @@ function clearAllFilters(){
   document.querySelectorAll('.reset').forEach(r=>r.click());
   ['f-gc','f-cbc','f-legendary'].forEach(id=>{ el(id).value='all'; });
   state.gc='all'; state.cbc='all'; state.legendary='all';
+  // Match modes back to the first-load defaults too, so "Clear all" lands on exactly the opening view.
+  [['phraseMode','phrasemode','any'],['colorMode','colmode','any'],['identityMode','idmode','subset'],['categoryMode','catmode','any']].forEach(([key,name,def])=>{
+    state[key] = def;
+    document.querySelectorAll(`input[name=${name}]`).forEach(x=>{ x.checked = x.value===def; x.closest('.radiopt').classList.toggle('active', x.value===def); });
+  });
   updateMobileFilterCount();
   recompute();
 }
 el('clear-all-btn').addEventListener('click', clearAllFilters);
 
-// Default view on first open: green/white (incl. colorless) creatures with an ETB trigger, by mana value.
-function applyDefaultView(){
-  state.identity.clear();
-  ['W','G','C'].forEach(c=>state.identity.add(c));
-  document.querySelectorAll('#pips-identity .pip').forEach(p=>p.classList.toggle('on', state.identity.has(p.dataset.c)));
-  state.type='creature'; el('f-type').value='Creature';
-  state.etb=true; el('f-etb').checked=true;
-  state.sort='cmc'; el('f-sort').value='cmc';
-  updateMobileFilterCount();
-}
-applyDefaultView();
+// First open shows every card with no filters: the initial `state` above is already that view,
+// and "Clear all filters" returns to it.
 recompute();
 
 /* ============================================================
@@ -3945,6 +3941,16 @@ const HIST_KEY = 'cci-search-history-v1', FAV_KEY = 'cci-search-favorites-v1';
 var searchHistory = [], searchFavs = [];
 try{ searchHistory = JSON.parse(localStorage.getItem(HIST_KEY)||'[]'); }catch(e){}
 try{ searchFavs = JSON.parse(localStorage.getItem(FAV_KEY)||'[]'); }catch(e){}
+// Builds before v7 opened on a preset view (G/W/colorless ETB creatures by mana value) and recorded it
+// into history on every load. Drop those auto-recorded entries once; favorites are left as the user starred them.
+try{
+  if(!localStorage.getItem('cci-default-view-migrated-v1')){
+    const wasOldDefault = h => h && h.sn && !h.sn.nl && h.sn.sort==='cmc' && filterSummary(h.sn)==='creature · id WGC · ETB only';
+    if(Array.isArray(searchHistory)) searchHistory = searchHistory.filter(h=>!wasOldDefault(h));
+    localStorage.setItem(HIST_KEY, JSON.stringify(searchHistory.slice(0,50)));
+    localStorage.setItem('cci-default-view-migrated-v1', '1');
+  }
+}catch(e){}
 function persistHist(){ try{ localStorage.setItem(HIST_KEY, JSON.stringify(searchHistory.slice(0,50))); localStorage.setItem(FAV_KEY, JSON.stringify(searchFavs)); }catch(e){} }
 
 // Snapshot of every filter + sort + the natural-language query
