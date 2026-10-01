@@ -1125,6 +1125,7 @@
             <div class="section">
               <div class="flabel flabel-actions">Cards in Deck (<span id="deck-card-count">0</span>)<span class="flabel-btns"><button class="expand-toggle" data-expand-all="deck-cardlist">Expand all</button><button class="expand-toggle" id="deck-list-toggle" aria-expanded="true">Hide list</button></span></div>
               <div class="deck-search-row"><input type="text" id="deck-search" placeholder="Search this deck — name, type, mechanic, keyword, tag or rules text" autocomplete="off"><span class="deck-search-count" id="deck-search-count"></span></div>
+              <div class="prob-row" style="margin:0 0 10px"><label style="min-width:auto">Sort</label><select id="deck-sort" data-no-upgrade><option value="recent">Most recently added</option><option value="name">Name A–Z</option><option value="cmc">Mana value</option><option value="type">Card type</option></select></div>
               <div id="deck-cardlist" class="deck-cardlist"></div>
             </div>
           </div>
@@ -1222,6 +1223,7 @@
       </div>
       <div class="section">
         <div class="flabel">Cards (<span id="ls-count">0</span>)<button class="expand-toggle" data-expand-all="ls-cardlist">Expand all</button></div>
+        <div class="prob-row" style="margin:0 0 10px"><label style="min-width:auto">Sort</label><select id="list-sort" data-no-upgrade><option value="recent">Most recently added</option><option value="cmc">Mana value</option><option value="name">Name A–Z</option><option value="type">Card type</option></select></div>
         <div class="list-actions" style="margin-bottom:12px;">
           <button class="btn-outline small" id="ls-copy">Copy list</button>
           <button class="btn-outline small" id="ls-add-deck">Add all to deck</button>
@@ -2232,9 +2234,13 @@ function wireExpandableRows(container){
   container.querySelectorAll('[data-similar]').forEach(b=>b.addEventListener('click', e=>{ e.stopPropagation(); openSimilarModal(b.dataset.similar); }));
 }
 
-function listEntries(L){
-  return (L?L.cards:[]).map(n=>NAME_INDEX.get(n.toLowerCase())).filter(Boolean)
-    .sort((a,b)=>a.cmc-b.cmc || a.n.localeCompare(b.n));
+function listEntries(L, mode){
+  const arr = (L?L.cards:[]).map(n=>NAME_INDEX.get(n.toLowerCase())).filter(Boolean);
+  mode = mode || localStorage.getItem('cci-list-sort') || 'recent';
+  if(mode==='recent') return arr.slice().reverse(); // lists append on save, so reverse = newest first
+  if(mode==='name') return arr.sort((a,b)=>a.n.localeCompare(b.n));
+  if(mode==='type') return arr.sort((a,b)=>mainTypes(a).join().localeCompare(mainTypes(b).join()) || a.n.localeCompare(b.n));
+  return arr.sort((a,b)=>a.cmc-b.cmc || a.n.localeCompare(b.n));
 }
 function renderListTabs(){
   el('list-tabs').innerHTML = lists.map(L=>`<button class="deck-tab ${L.id===currentListId?'active':''}" data-list-tab="${L.id}">${escapeHtml(L.name)} <span style="opacity:.55">(${L.cards.length})</span></button>`).join('');
@@ -2244,6 +2250,7 @@ function renderListsScreen(){
   const L = currentList(); if(!L) return;
   renderListTabs();
   el('list-name-input').value = L.name;
+  el('list-sort').value = localStorage.getItem('cci-list-sort')||'recent';
   const cards = listEntries(L);
   el('ls-count').textContent = cards.length;
   el('ls-total').textContent = cards.length;
@@ -2289,6 +2296,7 @@ el('ls-clear').addEventListener('click', ()=>{
   if(!confirm(`Remove all ${L.cards.length} cards from "${L.name}"?`)) return;
   L.cards = []; persistLists(); refreshSaveButtons(); renderListsScreen(); toast('List emptied');
 });
+el('list-sort').addEventListener('change', e=>{ try{ localStorage.setItem('cci-list-sort', e.target.value); }catch(err){} renderListsScreen(); });
 el('ls-copy').addEventListener('click', async ()=>{
   const cards = listEntries(currentList());
   if(!cards.length){ toast('This list is empty'); return; }
@@ -2508,12 +2516,27 @@ function prefetchIfMultiFace(name){
   const c = NAME_INDEX.get((name||'').toLowerCase());
   if(c && c.n.includes(' // ') && !(c.n in sfCache)){ if(!sfQueue.includes(c.n)) sfQueue.push(c.n); pumpSfQueue(); }
 }
+// Commander is singleton: only basic lands and "any number of" cards may have more than one copy.
+function allowsMultiples(card){ return /^Basic Land/.test(card.tl) || /any number of cards named/i.test(card.ot||''); }
+// Returns {added, capped, dup}. Marks the time the card was added so "recently added" sorting works.
+function putCardInDeck(deck, card, qty){
+  deck.added = deck.added || {};
+  const have = deck.cards[card.n]||0;
+  if(!allowsMultiples(card)){
+    if(have>=1) return {added:0, capped:0, dup:true};
+    deck.cards[card.n] = 1; deck.added[card.n] = Date.now();
+    return {added:1, capped: qty>1 ? qty-1 : 0, dup:false};
+  }
+  deck.cards[card.n] = have + qty; if(!have) deck.added[card.n] = Date.now();
+  return {added:qty, capped:0, dup:false};
+}
 function addCardToDeck(name, qty){
   prefetchIfMultiFace(name);
   const card = NAME_INDEX.get((name||'').toLowerCase());
   if(!card) return false;
   const deck = currentDeck();
-  deck.cards[card.n] = (deck.cards[card.n]||0) + qty;
+  const r = putCardInDeck(deck, card, qty||1);
+  if(r.dup){ toast(`${card.n} is already in ${deck.name} (singleton)`); return false; }
   saveDecks();
   renderCurrentDeck();
   return true;
@@ -2585,7 +2608,15 @@ function renderCurrentDeck(){
   el('deck-name-input').value = deck.name;
   renderCommanderSelects(deck);
   const cmdNames = deckCommanders(deck);
-  const entries = deckCardEntries(deck).sort((a,b)=> (cmdNames.includes(b.name)?1:0)-(cmdNames.includes(a.name)?1:0) || a.name.localeCompare(b.name));
+  const order = Object.keys(deck.cards); const addedAt = deck.added||{};
+  const sortMode = localStorage.getItem('cci-deck-sort')||'recent'; el('deck-sort').value = sortMode;
+  const cmp = {
+    recent: (a,b)=> ((addedAt[b.name]||0)-(addedAt[a.name]||0)) || (order.indexOf(b.name)-order.indexOf(a.name)),
+    name: (a,b)=> a.name.localeCompare(b.name),
+    cmc: (a,b)=> a.card.cmc-b.card.cmc || a.name.localeCompare(b.name),
+    type: (a,b)=> mainTypes(a.card).join().localeCompare(mainTypes(b.card).join()) || a.name.localeCompare(b.name),
+  }[sortMode];
+  const entries = deckCardEntries(deck).sort((a,b)=> (cmdNames.includes(b.name)?1:0)-(cmdNames.includes(a.name)?1:0) || cmp(a,b));
   el('deck-card-count').textContent = entries.reduce((s,e)=>s+e.qty,0);
 
   deck.tags = deck.tags || {};
@@ -2689,7 +2720,7 @@ el('card-search-input').addEventListener('input', e=>{
 function parseDecklistText(text){
   const lines = String(text||'').split(/\r?\n/);
   let added = 0;
-  const unmatched = [];
+  const unmatched = [], duplicates = [], capped = [];
   const deck = currentDeck();
   lines.forEach(raw=>{
     let line = raw.trim();
@@ -2701,14 +2732,14 @@ function parseDecklistText(text){
     let card = lookupCardByName(name);
     if(!card && name.length>3){ const lower=name.toLowerCase(); const cands = CARD_DATA.filter(c=>c.n.toLowerCase().startsWith(lower)); if(cands.length===1) card = cands[0]; }
     if(card){
-      deck.cards[card.n] = (deck.cards[card.n]||0) + qty;
+      const r = putCardInDeck(deck, card, qty);
       prefetchIfMultiFace(card.n);
-      added++;
+      if(r.dup) duplicates.push(card.n); else { added++; if(r.capped) capped.push(`${card.n} (kept 1 of ${qty})`); }
     } else {
       unmatched.push(raw.trim());
     }
   });
-  return {added, unmatched};
+  return {added, unmatched, duplicates, capped};
 }
 
 function applyDecklistResult(result){
@@ -2717,6 +2748,8 @@ function applyDecklistResult(result){
   const report = el('upload-report');
   report.style.display = 'block';
   report.innerHTML = `<div class="good">${result.added} card line(s) added.</div>` +
+    ((result.duplicates||[]).length ? `<div class="bad">${result.duplicates.length} already in the deck (singleton — skipped): ${result.duplicates.map(escapeHtml).join(', ')}</div>` : '') +
+    ((result.capped||[]).length ? `<div class="bad">Quantity reduced to 1 (singleton): ${result.capped.map(escapeHtml).join(', ')}</div>` : '') +
     (result.unmatched.length ? `<div class="bad">${result.unmatched.length} line(s) not recognized:</div>` + result.unmatched.map(u=>`<div>&middot; ${escapeHtml(u)}</div>`).join('') : '');
   if(result.unmatched.length && navigator.onLine!==false) resolveUnmatchedOnline(result.unmatched, report);
 }
@@ -2737,7 +2770,7 @@ async function resolveUnmatchedOnline(lines, report){
       if(res.ok){
         const j = await res.json();
         const card = lookupCardByName(j.name);
-        if(card){ deck.cards[card.n] = (deck.cards[card.n]||0) + qty; fixed++; notes.push(`${escapeHtml(name)} → ${escapeHtml(card.n)}`); }
+        if(card){ const r = putCardInDeck(deck, card, qty); if(r.dup) notes.push(`${escapeHtml(name)} → ${escapeHtml(card.n)} (already in deck, skipped)`); else { fixed++; notes.push(`${escapeHtml(name)} → ${escapeHtml(card.n)}`); } }
         else notes.push(`${escapeHtml(name)} → Scryfall says "${escapeHtml(j.name)}" (not in this app's data)`);
       } else notes.push(`${escapeHtml(name)} — no Scryfall match`);
     }catch(e){ notes.push(`${escapeHtml(name)} — lookup failed (offline?)`); }
@@ -2820,6 +2853,7 @@ function applyDeckSearch(){
   el('deck-search-count').textContent = terms.length ? `${shown} of ${total}` : '';
 }
 el('deck-search').addEventListener('input', applyDeckSearch);
+el('deck-sort').addEventListener('change', e=>{ try{ localStorage.setItem('cci-deck-sort', e.target.value); }catch(err){} renderCurrentDeck(); });
 el('deck-list-toggle').addEventListener('click', ()=>{
   const open = el('deck-cardlist').style.display==='none';
   el('deck-cardlist').style.display = open?'':'none';
